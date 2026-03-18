@@ -5,7 +5,7 @@ from authlib.integrations.flask_client import OAuth
 app = Flask(__name__)
 
 # ==============================
-# CONFIGURACIÓN DIRECTA EN CÓDIGO
+# CONFIGURACIÓN
 # ==============================
 app.secret_key = "CLAVE_SUPER_LARGA_Y_ALEATORIA_2026_CAMBIAR_EN_PRODUCCION"
 
@@ -15,7 +15,7 @@ GOOGLE_CLIENT_SECRET = "AIzaSyA2W9x8d7dmCCEp_xYwoDLAsn48BTtZzX0"
 app.config.update(
     SESSION_COOKIE_HTTPONLY=True,
     SESSION_COOKIE_SAMESITE="Lax",
-    SESSION_COOKIE_SECURE=False  # True si usas HTTPS real
+    SESSION_COOKIE_SECURE=True
 )
 
 # ==============================
@@ -131,18 +131,15 @@ def home():
 
 @app.route("/login")
 def login():
-    redirect_uri = url_for("auth_callback", _external=True)
+    redirect_uri = "https://web-2-b92f.onrender.com/callback"
     return google.authorize_redirect(redirect_uri)
 
 @app.route("/callback")
 def auth_callback():
     try:
         token = google.authorize_access_token()
-
-        # Intenta obtener userinfo desde el token
         user_info = token.get("userinfo")
 
-        # Si no vino en el token, consulta al endpoint userinfo
         if not user_info:
             resp = google.get("https://openidconnect.googleapis.com/v1/userinfo")
             user_info = resp.json()
@@ -185,8 +182,6 @@ def enviar_mensaje():
         flash("Debes escribir un mensaje.")
         return redirect(url_for("privado"))
 
-    # Aquí lo "enviamos" guardándolo en sesión
-    # Puedes luego reemplazar esta parte por BD, email, API, etc.
     session["ultimo_mensaje"] = mensaje
     flash(f'Mensaje enviado por {user.get("name", "Usuario")}.')
     return redirect(url_for("privado"))
