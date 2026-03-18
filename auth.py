@@ -10,7 +10,7 @@ app = Flask(__name__)
 app.secret_key = "CLAVE_SUPER_LARGA_Y_ALEATORIA_2026_CAMBIAR_EN_PRODUCCION"
 
 GOOGLE_CLIENT_ID = "966775310840-78j9h1djoobjsbff5qd2n00va59cmljs.apps.googleusercontent.com"
-GOOGLE_CLIENT_SECRET = "AIzaSyA2W9x8d7dmCCEp_xYwoDLAsn48BTtZzX0"
+GOOGLE_CLIENT_SECRET = "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"
 
 app.config.update(
     SESSION_COOKIE_HTTPONLY=True,
