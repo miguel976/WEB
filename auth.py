@@ -1,4 +1,5 @@
-from flask import Flask, redirect, url_for, session, render_template_string
+
+from flask import Flask, redirect, url_for, session, render_template_string, request, flash
 from authlib.integrations.flask_client import OAuth
 
 app = Flask(__name__)
@@ -14,7 +15,7 @@ GOOGLE_CLIENT_SECRET = "AIzaSyA2W9x8d7dmCCEp_xYwoDLAsn48BTtZzX0"
 app.config.update(
     SESSION_COOKIE_HTTPONLY=True,
     SESSION_COOKIE_SAMESITE="Lax",
-    SESSION_COOKIE_SECURE=False  # Cambiar a True si usas HTTPS real
+    SESSION_COOKIE_SECURE=False  # True si usas HTTPS real
 )
 
 # ==============================
@@ -45,7 +46,18 @@ HTML_HOME = """
 <body>
     <h1>Login con Google en Flask</h1>
 
+    {% with messages = get_flashed_messages() %}
+      {% if messages %}
+        <ul style="color: green;">
+          {% for msg in messages %}
+            <li>{{ msg }}</li>
+          {% endfor %}
+        </ul>
+      {% endif %}
+    {% endwith %}
+
     {% if user %}
+        <h2 style="color: green;">✅ Usuario autenticado con Google</h2>
         <p><b>Nombre:</b> {{ user.get("name", "N/A") }}</p>
         <p><b>Correo:</b> {{ user.get("email", "N/A") }}</p>
         <p><b>Correo verificado:</b> {{ user.get("email_verified", False) }}</p>
@@ -73,9 +85,36 @@ HTML_PRIVADO = """
 </head>
 <body>
     <h1>Zona privada</h1>
+
+    {% with messages = get_flashed_messages() %}
+      {% if messages %}
+        <ul style="color: blue;">
+          {% for msg in messages %}
+            <li>{{ msg }}</li>
+          {% endfor %}
+        </ul>
+      {% endif %}
+    {% endwith %}
+
     <p>Has iniciado sesión como: <b>{{ user.get("email", "N/A") }}</b></p>
     <p>Nombre: <b>{{ user.get("name", "N/A") }}</b></p>
-    <p>Este contenido solo es visible para usuarios autenticados con Google.</p>
+    <p style="color: green;"><b>Mensaje:</b> Usuario autenticado correctamente con Google.</p>
+
+    <hr>
+    <h3>Enviar mensaje simple</h3>
+    <form method="post" action="{{ url_for('enviar_mensaje') }}">
+        <label>Escribe un mensaje:</label><br><br>
+        <input type="text" name="mensaje" style="width: 300px;" required>
+        <button type="submit">Enviar</button>
+    </form>
+
+    {% if ultimo_mensaje %}
+        <p style="margin-top:20px; color: darkred;">
+            <b>Último mensaje enviado por {{ user.get("name", "N/A") }}:</b>
+            {{ ultimo_mensaje }}
+        </p>
+    {% endif %}
+
     <p><a href="{{ url_for('home') }}">Volver al inicio</a></p>
     <p><a href="{{ url_for('logout') }}">Cerrar sesión</a></p>
 </body>
@@ -97,32 +136,65 @@ def login():
 
 @app.route("/callback")
 def auth_callback():
-    token = google.authorize_access_token()
-    user_info = token.get("userinfo")
+    try:
+        token = google.authorize_access_token()
 
-    if not user_info:
-        user_info = google.userinfo()
+        # Intenta obtener userinfo desde el token
+        user_info = token.get("userinfo")
 
-    session["user"] = {
-        "sub": user_info.get("sub"),
-        "name": user_info.get("name"),
-        "email": user_info.get("email"),
-        "email_verified": user_info.get("email_verified"),
-        "picture": user_info.get("picture"),
-    }
+        # Si no vino en el token, consulta al endpoint userinfo
+        if not user_info:
+            resp = google.get("https://openidconnect.googleapis.com/v1/userinfo")
+            user_info = resp.json()
 
-    return redirect(url_for("privado"))
+        session["user"] = {
+            "sub": user_info.get("sub"),
+            "name": user_info.get("name"),
+            "email": user_info.get("email"),
+            "email_verified": user_info.get("email_verified"),
+            "picture": user_info.get("picture"),
+        }
+
+        flash("Autenticación exitosa. Bienvenido/a.")
+        return redirect(url_for("privado"))
+
+    except Exception as e:
+        return f"Error en autenticación: {str(e)}", 500
 
 @app.route("/privado")
 def privado():
     user = session.get("user")
     if not user:
         return redirect(url_for("login"))
-    return render_template_string(HTML_PRIVADO, user=user)
+
+    ultimo_mensaje = session.get("ultimo_mensaje")
+    return render_template_string(
+        HTML_PRIVADO,
+        user=user,
+        ultimo_mensaje=ultimo_mensaje
+    )
+
+@app.route("/enviar-mensaje", methods=["POST"])
+def enviar_mensaje():
+    user = session.get("user")
+    if not user:
+        return redirect(url_for("login"))
+
+    mensaje = request.form.get("mensaje", "").strip()
+    if not mensaje:
+        flash("Debes escribir un mensaje.")
+        return redirect(url_for("privado"))
+
+    # Aquí lo "enviamos" guardándolo en sesión
+    # Puedes luego reemplazar esta parte por BD, email, API, etc.
+    session["ultimo_mensaje"] = mensaje
+    flash(f'Mensaje enviado por {user.get("name", "Usuario")}.')
+    return redirect(url_for("privado"))
 
 @app.route("/logout")
 def logout():
     session.clear()
+    flash("Sesión cerrada correctamente.")
     return redirect(url_for("home"))
 
 # ==============================
