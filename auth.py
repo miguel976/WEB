@@ -29,14 +29,21 @@ class Usuario(db.Model):
     username = db.Column(db.String(100))
     password = db.Column(db.String(100))
 
-# Crear BD + usuario demo
+# Crear BD + usuario demo y prueba
 with app.app_context():
     db.create_all()
 
+    # usuario 1
     if not Usuario.query.filter_by(username="demo").first():
-        user = Usuario(username="demo", password="demo123")
-        db.session.add(user)
-        db.session.commit()
+        user1 = Usuario(username="demo", password="demo123")
+        db.session.add(user1)
+
+    # usuario 2 (nuevo)
+    if not Usuario.query.filter_by(username="miguel").first():
+        user2 = Usuario(username="miguel", password="prueba")
+        db.session.add(user2)
+
+    db.session.commit()
 
 # ==============================
 # OAUTH GOOGLE
