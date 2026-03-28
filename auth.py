@@ -1,14 +1,16 @@
+
 from flask import Flask, redirect, url_for, session, render_template_string, request, flash
 from authlib.integrations.flask_client import OAuth
-from flask_sqlalchemy import SQLAlchemy
-import os
 
 app = Flask(__name__)
 
 # ==============================
 # CONFIGURACIÓN
 # ==============================
-app.secret_key = os.environ.get("SECRET_KEY", "CLAVE_DEFAULT")
+app.secret_key = "CLAVE_SUPER_LARGA_Y_ALEATORIA_2026_CAMBIAR_EN_PRODUCCION"
+
+GOOGLE_CLIENT_ID = "966775310840-78j9h1djoobjsbff5qd2n00va59cmljs.apps.googleusercontent.com"
+GOOGLE_CLIENT_SECRET = "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"
 
 app.config.update(
     SESSION_COOKIE_HTTPONLY=True,
@@ -17,40 +19,8 @@ app.config.update(
 )
 
 # ==============================
-# BASE DE DATOS (SIMPLE)
-# ==============================
-app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///usuarios.db"
-app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
-
-db = SQLAlchemy(app)
-
-class Usuario(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    username = db.Column(db.String(100))
-    password = db.Column(db.String(100))
-
-# Crear BD + usuario demo y prueba
-with app.app_context():
-    db.create_all()
-
-    # usuario 1
-    if not Usuario.query.filter_by(username="demo").first():
-        user1 = Usuario(username="demo", password="demo123")
-        db.session.add(user1)
-
-    # usuario 2 (nuevo)
-    if not Usuario.query.filter_by(username="miguel").first():
-        user2 = Usuario(username="miguel", password="prueba")
-        db.session.add(user2)
-
-    db.session.commit()
-
-# ==============================
 # OAUTH GOOGLE
 # ==============================
-GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID")
-GOOGLE_CLIENT_SECRET = os.environ.get("GOOGLE_CLIENT_SECRET")
-
 oauth = OAuth(app)
 
 google = oauth.register(
@@ -67,23 +37,88 @@ google = oauth.register(
 # HTML
 # ==============================
 HTML_HOME = """
-<h1>Login Flask</h1>
+<!doctype html>
+<html lang="es">
+<head>
+    <meta charset="utf-8">
+    <title>Inicio</title>
+</head>
+<body>
+    <h1>Login con Google en Flask</h1>
 
-{% if user or usuario %}
-    <p>Bienvenido</p>
-    <a href="{{ url_for('privado') }}">Zona privada</a><br>
-    <a href="{{ url_for('logout') }}">Cerrar sesión</a>
-{% else %}
-    <a href="{{ url_for('login') }}">Login con Google</a><br><br>
-    <a href="{{ url_for('login_local') }}">Login con usuario</a>
-{% endif %}
+    {% with messages = get_flashed_messages() %}
+      {% if messages %}
+        <ul style="color: green;">
+          {% for msg in messages %}
+            <li>{{ msg }}</li>
+          {% endfor %}
+        </ul>
+      {% endif %}
+    {% endwith %}
+
+    {% if user %}
+        <h2 style="color: green;">✅ Usuario autenticado con Google</h2>
+        <p><b>Nombre:</b> {{ user.get("name", "N/A") }}</p>
+        <p><b>Correo:</b> {{ user.get("email", "N/A") }}</p>
+        <p><b>Correo verificado:</b> {{ user.get("email_verified", False) }}</p>
+
+        {% if user.get("picture") %}
+            <p><img src="{{ user.get('picture') }}" width="100" alt="Foto de perfil"></p>
+        {% endif %}
+
+        <p><a href="{{ url_for('privado') }}">Ir a zona privada</a></p>
+        <p><a href="{{ url_for('logout') }}">Cerrar sesión</a></p>
+    {% else %}
+        <p>No has iniciado sesión.</p>
+        <p><a href="{{ url_for('login') }}">Iniciar sesión con Google</a></p>
+    {% endif %}
+</body>
+</html>
 """
 
 HTML_PRIVADO = """
-<h1>Zona privada</h1>
-<p>Acceso autorizado</p>
+<!doctype html>
+<html lang="es">
+<head>
+    <meta charset="utf-8">
+    <title>Zona privada</title>
+</head>
+<body>
+    <h1>Zona privada</h1>
 
-<a href="{{ url_for('logout') }}">Cerrar sesión</a>
+    {% with messages = get_flashed_messages() %}
+      {% if messages %}
+        <ul style="color: blue;">
+          {% for msg in messages %}
+            <li>{{ msg }}</li>
+          {% endfor %}
+        </ul>
+      {% endif %}
+    {% endwith %}
+
+    <p>Has iniciado sesión como: <b>{{ user.get("email", "N/A") }}</b></p>
+    <p>Nombre: <b>{{ user.get("name", "N/A") }}</b></p>
+    <p style="color: green;"><b>Mensaje:</b> Usuario autenticado correctamente con Google.</p>
+
+    <hr>
+    <h3>Enviar mensaje simple</h3>
+    <form method="post" action="{{ url_for('enviar_mensaje') }}">
+        <label>Escribe un mensaje:</label><br><br>
+        <input type="text" name="mensaje" style="width: 300px;" required>
+        <button type="submit">Enviar</button>
+    </form>
+
+    {% if ultimo_mensaje %}
+        <p style="margin-top:20px; color: darkred;">
+            <b>Último mensaje enviado por {{ user.get("name", "N/A") }}:</b>
+            {{ ultimo_mensaje }}
+        </p>
+    {% endif %}
+
+    <p><a href="{{ url_for('home') }}">Volver al inicio</a></p>
+    <p><a href="{{ url_for('logout') }}">Cerrar sesión</a></p>
+</body>
+</html>
 """
 
 # ==============================
@@ -91,69 +126,74 @@ HTML_PRIVADO = """
 # ==============================
 @app.route("/")
 def home():
-    return render_template_string(
-        HTML_HOME,
-        user=session.get("user"),
-        usuario=session.get("usuario")
-    )
+    user = session.get("user")
+    return render_template_string(HTML_HOME, user=user)
 
-# -------- LOGIN GOOGLE --------
 @app.route("/login")
 def login():
-    redirect_uri = url_for("auth_callback", _external=True)
+    redirect_uri = "https://web-2-b92f.onrender.com/callback"
     return google.authorize_redirect(redirect_uri)
 
 @app.route("/callback")
 def auth_callback():
-    token = google.authorize_access_token()
-    user_info = token.get("userinfo")
+    try:
+        token = google.authorize_access_token()
+        user_info = token.get("userinfo")
 
-    session["user"] = user_info
-    return redirect(url_for("privado"))
+        if not user_info:
+            resp = google.get("https://openidconnect.googleapis.com/v1/userinfo")
+            user_info = resp.json()
 
-# -------- LOGIN LOCAL (BD) --------
-@app.route("/login-local", methods=["GET", "POST"])
-def login_local():
-    error = None
+        session["user"] = {
+            "sub": user_info.get("sub"),
+            "name": user_info.get("name"),
+            "email": user_info.get("email"),
+            "email_verified": user_info.get("email_verified"),
+            "picture": user_info.get("picture"),
+        }
 
-    if request.method == "POST":
-        username = request.form.get("username")
-        password = request.form.get("password")
+        flash("Autenticación exitosa. Bienvenido/a.")
+        return redirect(url_for("privado"))
 
-        user = Usuario.query.filter_by(username=username, password=password).first()
+    except Exception as e:
+        return f"Error en autenticación: {str(e)}", 500
 
-        if user:
-            session["usuario"] = user.username
-            return redirect(url_for("privado"))
-        else:
-            error = "Credenciales incorrectas"
-
-    return """
-    <h2>Login con base de datos</h2>
-    <form method="post">
-        <input name="username" placeholder="Usuario"><br><br>
-        <input name="password" type="password" placeholder="Contraseña"><br><br>
-        <button>Entrar</button>
-    </form>
-    """ + (f"<p style='color:red'>{error}</p>" if error else "")
-
-# -------- PRIVADO --------
 @app.route("/privado")
 def privado():
-    if not session.get("user") and not session.get("usuario"):
-        return redirect(url_for("home"))
+    user = session.get("user")
+    if not user:
+        return redirect(url_for("login"))
 
-    return render_template_string(HTML_PRIVADO)
+    ultimo_mensaje = session.get("ultimo_mensaje")
+    return render_template_string(
+        HTML_PRIVADO,
+        user=user,
+        ultimo_mensaje=ultimo_mensaje
+    )
 
-# -------- LOGOUT --------
+@app.route("/enviar-mensaje", methods=["POST"])
+def enviar_mensaje():
+    user = session.get("user")
+    if not user:
+        return redirect(url_for("login"))
+
+    mensaje = request.form.get("mensaje", "").strip()
+    if not mensaje:
+        flash("Debes escribir un mensaje.")
+        return redirect(url_for("privado"))
+
+    session["ultimo_mensaje"] = mensaje
+    flash(f'Mensaje enviado por {user.get("name", "Usuario")}.')
+    return redirect(url_for("privado"))
+
 @app.route("/logout")
 def logout():
     session.clear()
+    flash("Sesión cerrada correctamente.")
     return redirect(url_for("home"))
 
 # ==============================
 # MAIN
 # ==============================
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 10000))
-    app.run(host="0.0.0.0", port=port)
+    app.run(host="0.0.0.0", port=5000, debug=True)
